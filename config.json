@@ -237,9 +237,35 @@
   "translation": {
     "enabled": true,
     "endpoint": "https://translate.googleapis.com/translate_a/single",
+    "fallback_endpoints": [
+      {
+        "name": "google_clients5",
+        "kind": "google_gtx",
+        "url": "https://clients5.google.com/translate_a/t"
+      },
+      {
+        "name": "mymemory",
+        "kind": "mymemory",
+        "url": "https://api.mymemory.translated.net/get"
+      },
+      {
+        "name": "lingva",
+        "kind": "lingva",
+        "url": "https://lingva.ml/api/v1"
+      }
+    ],
     "target_language": "zh-CN",
     "cache_file": "translation_cache.json",
-    "circuit_breaker_failures": 3
+    "max_summary_chars": 1200,
+    "timeout_seconds": 15,
+    "min_interval_seconds": 1.2,
+    "max_retries": 3,
+    "backoff_seconds": 1.5,
+    "trust_env": false,
+    "proxy": "http://127.0.0.1:7897",
+    "endpoint_cooldown_seconds": 90,
+    "circuit_breaker_failures": 12,
+    "circuit_breaker_cooldown_seconds": 45
   },
   "output": {
     "dir": "output",

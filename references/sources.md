@@ -31,12 +31,20 @@
 
 归档没有稳定性承诺。失败时在报告写覆盖缺口，不使用旧结果补齐。
 
-### Reddit 中文字段
+### Reddit / Hacker News 中文字段
 
-入选后才将 Reddit 的公开标题与摘要发送到 `config.json` 中的免密翻译端点，
-生成 `title_zh` 和 `summary_zh`。翻译缓存写入
-`output/translation_cache.json`，只保存内容哈希和中文结果，不保存 Cookie。
-翻译连续失败 3 次会停止本轮后续请求；热点仍保留，中文字段为空。
+入选后才将公开标题与摘要发送到 `config.json` 中的免密翻译端点，
+生成 `title_zh` 和 `summary_zh`。标题与摘要分开发请求；摘要超长会截断。
+主端点失败时按 `fallback_endpoints` 依次尝试（如 Google clients5、MyMemory、Lingva）；
+单个端点遇 429/5xx 会冷却 `endpoint_cooldown_seconds`（默认 90 秒）再轮到它。
+翻译使用独立 HTTP 客户端（默认 `trust_env=false`，不跟系统代理）；
+可通过 `translation.proxy` / `translation.proxies` 或环境变量
+`RADAR_TRANSLATION_PROXY` 只给翻译开代理，不影响 Reddit/V2EX/HN 抓取。
+翻译缓存写入 `output/translation_cache.json`，只保存内容哈希和中文结果，不保存 Cookie。
+仅网络 / 超时 / 429 / 5xx 等传输类错误计入熔断；连续达到
+`circuit_breaker_failures`（默认 12）后冷却
+`circuit_breaker_cooldown_seconds`（默认 45 秒）再试。
+单条解析失败或仅摘要失败不拉闸；热点仍保留，中文字段可为空。
 
 ## V2EX
 

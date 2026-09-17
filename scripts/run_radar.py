@@ -15,7 +15,7 @@ from http_client import PoliteClient
 from models import SourceHealth, Story
 from report import build_document, render_markdown
 from sources import HackerNewsSource, RedditSource, V2EXSource
-from translator import RedditTranslator
+from translator import RedditTranslator, build_translation_client
 
 
 def apply_saved_output_exclusions(
@@ -118,7 +118,7 @@ def collect(
 
     translator = RedditTranslator(
         cfg.get("translation", {}),
-        client,
+        build_translation_client(cfg),
         output_dir(cfg),
     )
     translator.translate_all(stories)
@@ -189,7 +189,7 @@ def cmd_report(cfg: dict[str, Any]) -> None:
     apply_saved_output_exclusions(document, cfg)
     translator = RedditTranslator(
         cfg.get("translation", {}),
-        PoliteClient(cfg),
+        build_translation_client(cfg),
         output_dir(cfg),
     )
     translator.translate_document(document)

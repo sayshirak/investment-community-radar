@@ -19,6 +19,7 @@ from filtering import (  # noqa: E402
     recent_window_start,
     title_has_excluded_prefix,
 )
+from http_client import FetchError  # noqa: E402
 from models import SourceHealth, Story  # noqa: E402
 from reddit_percentiles import percentile_nearest_rank  # noqa: E402
 from report import build_document, render_markdown  # noqa: E402
@@ -30,7 +31,7 @@ from sources.hackernews import (  # noqa: E402
 )
 from sources.reddit import parse_archive_listing, parse_archive_posts  # noqa: E402
 from sources.v2ex import parse_detail, parse_listing  # noqa: E402
-from translator import RedditTranslator  # noqa: E402
+from translator import RedditTranslator, build_translation_client  # noqa: E402
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 # Local noon on 2026-08-02 makes the 7-day window start at 2026-07-27 00:00 local.
@@ -429,12 +430,15 @@ class TestReport(unittest.TestCase):
 
 
 class TestTranslation(unittest.TestCase):
-    def test_translator_splits_pair_and_caches(self):
+    def test_translator_separate_requests_and_caches(self):
         class FakeClient:
-            def get_json(self, *_args, **_kwargs):
-                return [[
-                    ["中文题目\n__RADAR_SPLIT_9F4A__\n中文摘要", "", None, None]
-                ]]
+            def get_json(self, *_args, **kwargs):
+                q = (kwargs.get("params") or {}).get("q", "")
+                mapping = {
+                    "English title": "中文题目",
+                    "English summary": "中文摘要",
+                }
+                return [[[mapping[q], "", None, None]]]
 
         candidate = story("reddit", 1001, 1)
         candidate.title = "English title"
@@ -450,10 +454,165 @@ class TestTranslation(unittest.TestCase):
             self.assertEqual(candidate.summary_zh, "中文摘要")
             self.assertTrue(os.path.exists(os.path.join(directory, "translations.json")))
 
-    def test_translator_backfills_saved_document(self):
+    def test_translator_keeps_title_when_summary_fails(self):
+        class FakeClient:
+            def get_json(self, *_args, **kwargs):
+                q = (kwargs.get("params") or {}).get("q", "")
+                if q == "English summary":
+                    raise FetchError("http_429", "rate limited")
+                return [[["中文题目", "", None, None]]]
+
+        candidate = story("reddit", 1002, 1)
+        candidate.title = "English title"
+        candidate.summary = "English summary"
+        with tempfile.TemporaryDirectory() as directory:
+            translator = RedditTranslator(
+                {
+                    "enabled": True,
+                    "cache_file": "translations.json",
+                    "fallback_endpoints": [],
+                    "circuit_breaker_failures": 12,
+                },
+                FakeClient(),
+                directory,
+            )
+            translator.translate_all([candidate])
+            self.assertEqual(candidate.title_zh, "中文题目")
+            self.assertEqual(candidate.summary_zh, "")
+            self.assertEqual(translator.translated, 1)
+            self.assertFalse(translator._circuit_blocks())
+
+    def test_translator_falls_back_to_secondary_endpoint(self):
+        calls = []
+
+        class FakeClient:
+            def get_json(self, url, **kwargs):
+                calls.append(url)
+                if "translate.googleapis.com" in url:
+                    raise FetchError("http_429", "primary limited")
+                if "mymemory" in url:
+                    q = (kwargs.get("params") or {}).get("q", "")
+                    return {
+                        "responseStatus": 200,
+                        "responseData": {"translatedText": f"ZH:{q}"},
+                    }
+                raise FetchError("network", f"unexpected {url}")
+
+        candidate = story("reddit", 1003, 1)
+        candidate.title = "Hello"
+        candidate.summary = ""
+        with tempfile.TemporaryDirectory() as directory:
+            translator = RedditTranslator(
+                {
+                    "enabled": True,
+                    "cache_file": "translations.json",
+                    "endpoint": "https://translate.googleapis.com/translate_a/single",
+                    "fallback_endpoints": [
+                        {
+                            "name": "mymemory",
+                            "kind": "mymemory",
+                            "url": "https://api.mymemory.translated.net/get",
+                        }
+                    ],
+                },
+                FakeClient(),
+                directory,
+            )
+            translator.translate_all([candidate])
+            self.assertEqual(candidate.title_zh, "ZH:Hello")
+            self.assertEqual(translator.fallback_uses, 1)
+            self.assertEqual(translator._last_endpoint, "mymemory")
+            self.assertTrue(any("mymemory" in url for url in calls))
+
+    def test_translator_circuit_trips_only_on_transport_errors(self):
+        calls = {"n": 0}
+
         class FakeClient:
             def get_json(self, *_args, **_kwargs):
-                return [[["已翻译\n__RADAR_SPLIT_9F4A__\n已翻译摘要", "", None, None]]]
+                calls["n"] += 1
+                raise FetchError("timeout", "slow")
+
+        items = []
+        for index in range(5):
+            item = story("reddit", 2000 + index, 1)
+            item.title = f"Title {index}"
+            item.summary = ""
+            items.append(item)
+        with tempfile.TemporaryDirectory() as directory:
+            translator = RedditTranslator(
+                {
+                    "enabled": True,
+                    "cache_file": "translations.json",
+                    "fallback_endpoints": [],
+                    "endpoint_cooldown_seconds": 0,
+                    "circuit_breaker_failures": 3,
+                    "circuit_breaker_cooldown_seconds": 60,
+                },
+                FakeClient(),
+                directory,
+            )
+            translator.translate_all(items)
+            self.assertEqual(translator.translated, 0)
+            self.assertTrue(translator._circuit_blocks())
+            # Opened after 3 transport failures; remaining skipped without extra calls.
+            self.assertEqual(calls["n"], 3)
+
+    def test_translator_schema_error_does_not_trip_circuit(self):
+        class FakeClient:
+            def get_json(self, *_args, **_kwargs):
+                return {"unexpected": True}
+
+        items = []
+        for index in range(5):
+            item = story("hackernews", 3000 + index, 1)
+            item.title = f"HN {index}"
+            item.summary = ""
+            items.append(item)
+        with tempfile.TemporaryDirectory() as directory:
+            translator = RedditTranslator(
+                {
+                    "enabled": True,
+                    "cache_file": "translations.json",
+                    "fallback_endpoints": [],
+                    "circuit_breaker_failures": 2,
+                },
+                FakeClient(),
+                directory,
+            )
+            translator.translate_all(items)
+            self.assertEqual(translator.failures, 5)
+            self.assertFalse(translator._circuit_blocks())
+
+    def test_build_translation_client_disables_trust_env(self):
+        client = build_translation_client(
+            {
+                "request": {"user_agent": "test-ua"},
+                "translation": {"trust_env": False, "timeout_seconds": 9},
+            }
+        )
+        self.assertFalse(client.session.trust_env)
+        self.assertEqual(client.timeout, 9.0)
+
+    def test_build_translation_client_sets_dedicated_proxy(self):
+        client = build_translation_client(
+            {
+                "request": {"user_agent": "test-ua"},
+                "translation": {
+                    "trust_env": False,
+                    "proxy": "http://127.0.0.1:7897",
+                },
+            }
+        )
+        self.assertFalse(client.session.trust_env)
+        self.assertEqual(client.session.proxies.get("http"), "http://127.0.0.1:7897")
+        self.assertEqual(client.session.proxies.get("https"), "http://127.0.0.1:7897")
+
+    def test_translator_backfills_saved_document(self):
+        class FakeClient:
+            def get_json(self, *_args, **kwargs):
+                q = (kwargs.get("params") or {}).get("q", "")
+                mapping = {"Title": "已翻译", "Summary": "已翻译摘要"}
+                return [[[mapping[q], "", None, None]]]
 
         document = {
             "stories": {

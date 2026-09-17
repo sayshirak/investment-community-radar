@@ -127,7 +127,7 @@ V2EX 额外排除开户广告帖（如低佣开户 / 免五 / `promotions` 节�
 - 只读、低频、串行访问；不破验证码、不使用代理绕过封锁。
 - 不保存 Cookie、用户名列表或评论原文。
 - 报告只保存主帖公开摘要、计数、时间与链接。
-- Reddit / Hacker News 公开标题和摘要会发送到免密翻译端点；可在 `config.json` 关闭。
+- Reddit / Hacker News 公开标题和摘要会分开发送到免密翻译端点（独立客户端；可用 `translation.proxy` 只给翻译走代理；主端点失败时尝试 fallback_endpoints）；可在 `config.json` 关闭。
 - Cookie 若未来需要，只能从环境变量读取。
 
 详细字段见 [references/fields.md](references/fields.md)，来源维护见 [references/sources.md](references/sources.md)。

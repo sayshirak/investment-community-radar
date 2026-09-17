@@ -23,6 +23,16 @@ class PoliteClient:
         self.max_retries = int(request_cfg.get("max_retries", 2))
         self.backoff = float(request_cfg.get("backoff_seconds", 2.0))
         self.session = requests.Session()
+        # Translation client sets trust_env=false so a dead local proxy cannot hang GETs.
+        if "trust_env" in request_cfg:
+            self.session.trust_env = bool(request_cfg.get("trust_env"))
+        proxies = request_cfg.get("proxies")
+        if proxies is None and request_cfg.get("proxy"):
+            proxy_url = str(request_cfg["proxy"]).strip()
+            if proxy_url:
+                proxies = {"http": proxy_url, "https": proxy_url}
+        if isinstance(proxies, dict):
+            self.session.proxies.update(proxies)
         self.session.headers.update(
             {
                 "User-Agent": request_cfg.get("user_agent", "investment-community-radar/2.0"),
