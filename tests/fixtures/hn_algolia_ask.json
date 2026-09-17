@@ -1,0 +1,21 @@
+{
+  "hits": [
+    {
+      "objectID": "2001",
+      "title": "Ask HN: Best way to handle a sudden job layoff?",
+      "story_text": "I just got laid off and need a financial plan.",
+      "url": null,
+      "num_comments": 256,
+      "created_at_i": 1751400000
+    },
+    {
+      "objectID": "2002",
+      "title": "Ask HN: Favorite TypeScript framework?",
+      "story_text": "Looking for a React framework.",
+      "url": null,
+      "num_comments": 300,
+      "created_at_i": 1751400000
+    }
+  ],
+  "nbPages": 1
+}

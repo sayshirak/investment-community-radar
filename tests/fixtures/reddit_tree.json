@@ -1,0 +1,31 @@
+{
+  "data": [
+    {
+      "kind": "t1",
+      "data": {
+        "created_utc": 1785630000,
+        "body": "first",
+        "replies": {
+          "data": {
+            "children": [
+              {
+                "kind": "t1",
+                "data": {
+                  "created_utc": 1785631000,
+                  "body": "nested",
+                  "replies": ""
+                }
+              },
+              {
+                "kind": "more",
+                "data": {
+                  "children": ["x", "y"]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

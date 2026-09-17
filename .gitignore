@@ -1,0 +1,11 @@
+@'
+__pycache__/
+*.py[cod]
+.Python
+.venv/
+venv/
+output/
+*.tmp
+.DS_Store
+Thumbs.db
+'@ | Set-Content -Encoding utf8 .gitignore
